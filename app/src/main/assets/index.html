@@ -128,6 +128,10 @@
             overflow: hidden;
         }
 
+        .pane {
+            position: relative;
+        }
+
         .pane img,
         .pane video {
             width: 100%;
@@ -135,6 +139,15 @@
             object-fit: contain;
             display: block;
             background: #000;
+        }
+
+        /* Video sits on top of the thumbnail and stays invisible
+           until its first frame is actually on screen. */
+        .pane video {
+            position: absolute;
+            left: 0;
+            top: 0;
+            background: transparent;
         }
 
         /* Make sure no native play button / overlay ever shows */
@@ -225,6 +238,9 @@
         return viewer.clientHeight || window.innerHeight;
     }
 
+    const TRANSPARENT_POSTER =
+        "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+
     function makePane(index) {
 
         const pane = document.createElement("div");
@@ -246,6 +262,33 @@
         img.draggable = false;
         pane.appendChild(img);
 
+        // Videos: a real <video> is created right away (paused), so its
+        // true first frame is already decoded before you swipe to it.
+        // It stays invisible until that frame exists, so the native
+        // placeholder icon can never show.
+        if (item.type === "video") {
+
+            const video = document.createElement("video");
+
+            video.setAttribute("playsinline", "");
+            video.setAttribute("webkit-playsinline", "");
+            video.setAttribute("disablepictureinpicture", "");
+            video.setAttribute("controlslist", "nodownload nofullscreen noremoteplayback");
+            video.controls = false;
+            video.loop = true;
+            video.preload = "auto";
+
+            // A video WITHOUT a poster makes Android WebView draw its
+            // default play-icon placeholder. A fully transparent poster
+            // suppresses that icon, and lets the thumbnail <img> under
+            // the video show through until the real frame is ready.
+            video.setAttribute("poster", TRANSPARENT_POSTER);
+
+            video.src = item.uri;
+
+            pane.appendChild(video);
+        }
+
         return pane;
     }
 
@@ -259,15 +302,29 @@
             "translateY(" + (-viewerHeight() + dy) + "px)";
     }
 
-    function stopVideo() {
+    /*
+     * Fully remove a pane's video from the DOM (never leave a
+     * src-less <video> visible, that is what shows the placeholder).
+     */
+    function disposePane(pane) {
 
-        const old = track.querySelector("video");
-
-        if (old) {
-            old.pause();
-            old.removeAttribute("src");
-            old.load();
+        if (!pane) {
+            return;
         }
+
+        const v = pane.querySelector("video");
+
+        if (v) {
+            v.pause();
+            v.removeAttribute("src");
+            v.load();
+            v.remove();
+        }
+    }
+
+    function disposeAll() {
+
+        panes.forEach(disposePane);
     }
 
     /*
@@ -275,7 +332,7 @@
      */
     function render() {
 
-        stopVideo();
+        disposeAll();
 
         track.innerHTML = "";
 
@@ -293,34 +350,16 @@
     }
 
     /*
-     * If the current item is a video, swap its thumbnail for a real
-     * <video>. The thumbnail is used as the poster, so the native
-     * "circle with triangle" placeholder never appears.
+     * The current pane's video already exists (and already shows
+     * its first frame), so we only have to start it.
      */
     function activateCurrent() {
 
-        const item = media[current];
+        const video = panes[1] && panes[1].querySelector("video");
 
-        if (!item || item.type !== "video") {
+        if (!video) {
             return;
         }
-
-        const pane = panes[1];
-
-        const video = document.createElement("video");
-
-        video.setAttribute("playsinline", "");
-        video.setAttribute("webkit-playsinline", "");
-        video.setAttribute("poster", item.thumbnail);   // <-- hides default placeholder
-        video.setAttribute("disablepictureinpicture", "");
-        video.setAttribute("controlslist", "nodownload nofullscreen noremoteplayback");
-        video.controls = false;
-        video.loop = true;
-        video.preload = "auto";
-        video.src = item.uri;
-
-        pane.innerHTML = "";
-        pane.appendChild(video);
 
         video.play().catch(function () {});
     }
@@ -346,7 +385,7 @@
 
     function closeViewer() {
 
-        stopVideo();
+        disposeAll();
 
         viewer.classList.remove("visible");
         track.innerHTML = "";
@@ -433,7 +472,7 @@
         // Tap (no real movement): play / pause video
         if (!moved) {
 
-            const video = track.querySelector("video");
+            const video = panes[1] && panes[1].querySelector("video");
 
             if (video) {
                 if (video.paused) {
@@ -489,7 +528,7 @@
 
         animating = true;
 
-        const video = track.querySelector("video");
+        const video = panes[1] && panes[1].querySelector("video");
 
         if (video) {
             video.pause();
@@ -499,8 +538,37 @@
 
         setTimeout(function () {
 
+            // The pane we just left becomes a neighbour: rewind its
+            // video so it shows frame 0 again (it is off-screen now).
+            const left = panes[1].querySelector("video");
+
+            if (left) {
+                left.pause();
+                left.currentTime = 0;
+            }
+
             current += direction;
-            render();
+
+            // Reuse the pane that's already on screen; only create
+            // the one new neighbour that scrolled into range.
+            if (direction === 1) {
+                disposePane(panes[0]);
+                track.removeChild(panes[0]);
+                panes.shift();
+                panes.push(makePane(current + 1));
+                track.appendChild(panes[2]);
+            } else {
+                disposePane(panes[2]);
+                track.removeChild(panes[2]);
+                panes.pop();
+                panes.unshift(makePane(current - 1));
+                track.insertBefore(panes[0], track.firstChild);
+            }
+
+            setOffset(0, false);
+
+            activateCurrent();
+
             animating = false;
 
         }, 250);
