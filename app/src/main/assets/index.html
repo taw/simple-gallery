@@ -45,6 +45,10 @@
             background: #000;
             -webkit-overflow-scrolling: touch;
             overscroll-behavior-y: contain;
+
+            /* Space for the Android navigation bar. Set from Kotlin via
+               setBottomInset(), or picked up from env() if available. */
+            padding-bottom: var(--bottom-inset, env(safe-area-inset-bottom, 0px));
         }
 
         .tile {
@@ -391,6 +395,53 @@
         track.innerHTML = "";
 
         grid.scrollTop = gridScroll;
+
+        revealCurrentTile();
+    }
+
+    /*
+     * After closing, make sure the tile of the item you were last
+     * viewing is on screen (you may have swiped far from where you
+     * opened it). If it's already visible, the scroll position is
+     * left alone.
+     */
+    function revealCurrentTile() {
+
+        const tile = grid.children[current];
+
+        if (!tile) {
+            return;
+        }
+
+        const g = grid.getBoundingClientRect();
+        const t = tile.getBoundingClientRect();
+
+        const bottomPad = parseFloat(
+            getComputedStyle(grid).paddingBottom
+        ) || 0;
+
+        const visibleTop = g.top;
+        const visibleBottom = g.bottom - bottomPad;
+
+        if (t.top >= visibleTop && t.bottom <= visibleBottom) {
+            return;
+        }
+
+        // Centre the tile vertically
+        grid.scrollTop +=
+            (t.top + t.height / 2) -
+            (visibleTop + (visibleBottom - visibleTop) / 2);
+    }
+
+    /*
+     * Called from Android with the navigation bar height in CSS px.
+     */
+    function setBottomInset(px) {
+
+        document.documentElement.style.setProperty(
+            "--bottom-inset",
+            px + "px"
+        );
     }
 
     function handleAndroidBack() {
