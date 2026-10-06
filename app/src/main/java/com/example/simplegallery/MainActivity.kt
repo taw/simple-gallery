@@ -20,8 +20,12 @@ import androidx.core.content.ContextCompat
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 
 class MainActivity : ComponentActivity() {
+    @Volatile private var insetTop = 0f
+    @Volatile private var insetBottom = 0f
 
     private lateinit var webView: WebView
 
@@ -78,6 +82,21 @@ class MainActivity : ComponentActivity() {
 
         setContentView(webView)
 
+        ViewCompat.setOnApplyWindowInsetsListener(webView) { _, insets ->
+            val bars = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or
+                        WindowInsetsCompat.Type.displayCutout()
+            )
+            val density = resources.displayMetrics.density
+            insetTop = bars.top / density
+            insetBottom = bars.bottom / density
+
+            webView.evaluateJavascript(
+                "typeof setInsets === 'function' && setInsets($insetTop, $insetBottom)",
+                null
+            )
+            insets
+        }
         onBackPressedDispatcher.addCallback(
             this,
             object : OnBackPressedCallback(true) {
@@ -212,6 +231,10 @@ class MainActivity : ComponentActivity() {
     }
 
     inner class GalleryBridge {
+        @JavascriptInterface
+        @Suppress("unused")
+        fun getInsets(): String =
+            """{"top":$insetTop,"bottom":$insetBottom}"""
 
         @JavascriptInterface
         @Suppress("unused")

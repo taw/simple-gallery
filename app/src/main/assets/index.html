@@ -34,7 +34,7 @@
             position: fixed;
             left: 0;
             right: 0;
-            top: env(safe-area-inset-top, 0px);
+            top: var(--top-inset, env(safe-area-inset-top, 0px));
             bottom: 0;
             overflow-y: auto;
             overflow-x: hidden;
@@ -434,14 +434,15 @@
     }
 
     /*
-     * Called from Android with the navigation bar height in CSS px.
+     * Status bar / navigation bar heights in CSS px.
+     * Called from Android whenever they change (rotation etc.).
      */
-    function setBottomInset(px) {
+    function setInsets(top, bottom) {
 
-        document.documentElement.style.setProperty(
-            "--bottom-inset",
-            px + "px"
-        );
+        const root = document.documentElement.style;
+
+        root.setProperty("--top-inset", top + "px");
+        root.setProperty("--bottom-inset", bottom + "px");
     }
 
     function handleAndroidBack() {
@@ -637,6 +638,12 @@
     /* -------------------------
        START
     ------------------------- */
+
+    // Ask Android for the current insets before first paint
+    try {
+        const insets = JSON.parse(Android.getInsets());
+        setInsets(insets.top, insets.bottom);
+    } catch (e) {}
 
     loadMedia();
 
